@@ -25,16 +25,23 @@ async def start(request):
 async def download(request):
     params = await request.post()
     try:
+        maxzoom = min(18 , max(14,int(params["maxzoom"])) )
+        path = params["path"]
+        if not os.path.exists(path):
+            raise Exception("path not exit")
         imgxy = [float(params["minX"]), float(params["minY"]),
                  float(params["maxX"]), float(params["maxY"])]
     except Exception as e:
+        print(e)
         return web.json_response({'error': '500'}, status=404)
+    print("共下载{}级 ，下载地址：{}".format(maxzoom,path))
     imgxyArray = getImgxyArray(imgxy)
     imgxyArray[:10] = getImgxyArray([8182944.69, 2039050.5, 15039759.58, 7054488.21])[:10]
+    imgxyArray[maxzoom:] = []
     #imgxyArray[10:15] = getImgxyArray([12849821.11, 4758749.11, 13082407.79, 4993886.96])[10:15]
     # imgxyArray[15:] = getImgxyArray([12849821.11, 4758749.11, 13082407.79, 4993886.96])[15:]
     if not downloadImgCondition["downloading"]:
-        Thread(target=downloadImgs, args=(imgxyArray, "D:\map\dacMapImg2")).start()
+        Thread(target=downloadImgs, args=(imgxyArray, path)).start()
     return web.Response(text="")
 
 def getImgxyArray(imgxy):
@@ -57,13 +64,11 @@ def downloadImgs(imgxylist, basepath="/home/lifengchao/map/北京东城区/dacMa
         if os.path.exists(path):  # 图片已存在,如果链接对应的图片已存在，则忽略下载
             return {'ignored': True  # 用于告知download_one()的调用方，此图片被忽略下载
             }
-        return {'ignored': True  # 用于告知download_one()的调用方，此图片被忽略下载
-                }
 
         url = "{}&x={}&y={}&z={}&udt={}".format(baseurls[(x + y) % 3], x, y, z, mapfeature)
         try:
             async with semaphore:
-                async with session.get(url) as response:
+                async with session.get(url,timeout=60) as response:
                     if response.status == 200:
                         image_content = await response.read()  # Binary Response Content: access the response body as bytes, for non-text requests
                     else:
@@ -92,7 +97,7 @@ def downloadImgs(imgxylist, basepath="/home/lifengchao/map/北京东城区/dacMa
                         failed_images += 1
                     else:
                         visited_images += 1
-                bar.update(count - 100000 + i)
+                bar.update(count - len(do_list) + i)
             do_list.clear()
 
         async with aiohttp.ClientSession() as session:  # aiohttp建议整个应用只创建一个session，不能为每个请求创建一个seesion

@@ -16,7 +16,12 @@ $("#download").on('click', function(){
     {
         $(this).prop("disabled",true);
         queryButtonEnabled(this);
-        $.post("/download",getPointRange(getCoordinateRange(boundaries)));
+        var maxzoom = $.trim($("#maxzoom").val());
+        var path = $.trim($("#path").val());
+        var params = getPointRange(getCoordinateRange(boundaries))
+        params.maxzoom = maxzoom;
+        params.path = path;
+        $.post("/download",params);
     }
 });
 
