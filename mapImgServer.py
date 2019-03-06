@@ -27,8 +27,8 @@ async def download(request):
     try:
         maxzoom = min(18 , max(14,int(params["maxzoom"])) )
         path = params["path"]
-        if not os.path.exists(path):
-            raise Exception("path not exit")
+        if not os.path.exists(os.path.dirname(path)):
+            raise Exception("parent path not exit")
         imgxy = [float(params["minX"]), float(params["minY"]),
                  float(params["maxX"]), float(params["maxY"])]
     except Exception as e:
@@ -56,18 +56,18 @@ baseurls = ["http://api0.map.bdimg.com/customimage/tile?", "http://api1.map.bdim
             "http://api2.map.bdimg.com/customimage/tile?"]
 
 def downloadImgs(imgxylist, basepath="/home/lifengchao/map/北京东城区/dacMapImg", mapfeature=mapfeature):
-    async def download_one(semaphore, session, x, y, z):
+    async def download_one(semaphore1,semaphore2, session, x, y, z):
         path = os.path.join(basepath, str(z), str(x))
         if not os.path.exists(path):
             os.makedirs(path)
-        path = os.path.join(path, "{}.jpg".format(z))
+        path = os.path.join(path, "{}.jpg".format(y))
         if os.path.exists(path):  # 图片已存在,如果链接对应的图片已存在，则忽略下载
             return {'ignored': True  # 用于告知download_one()的调用方，此图片被忽略下载
             }
 
         url = "{}&x={}&y={}&z={}&udt={}".format(baseurls[(x + y) % 3], x, y, z, mapfeature)
         try:
-            async with semaphore:
+            async with semaphore1:
                 async with session.get(url,timeout=60) as response:
                     if response.status == 200:
                         image_content = await response.read()  # Binary Response Content: access the response body as bytes, for non-text requests
@@ -78,8 +78,10 @@ def downloadImgs(imgxylist, basepath="/home/lifengchao/map/北京东城区/dacMa
                 'failed': True  # 用于告知download_one()的调用方，请求此图片URL时失败了
             }
 
-        async with aiofiles.open(path, 'wb') as f:
-            await f.write(image_content)
+        async with semaphore2:
+            async with aiofiles.open(path, 'wb') as f:
+                await f.write(image_content)
+
         return {
             'failed': False  # 用于告知download_one()的调用方，此图片被成功下载
         }
@@ -101,11 +103,12 @@ def downloadImgs(imgxylist, basepath="/home/lifengchao/map/北京东城区/dacMa
             do_list.clear()
 
         async with aiohttp.ClientSession() as session:  # aiohttp建议整个应用只创建一个session，不能为每个请求创建一个seesion
-            semaphore = asyncio.Semaphore(900)  # 用于限制并发请求数量
+            semaphore1 = asyncio.Semaphore(900)  # 用于限制并发请求数量
+            semaphore2 = asyncio.Semaphore(900)  # 用于限制并发请求数量
             length = 0
             for  imgxy in imgxylist:
                 length += (imgxy[2] + 1 - imgxy[0])*(imgxy[3] + 1 - imgxy[1])
-            to_do = (download_one(semaphore, session, j, k, zoom)
+            to_do = (download_one(semaphore1,semaphore2, session, j, k, zoom)
                      for zoom, imgxy in enumerate(imgxylist, start=1) if zoom > -1 for j in
                      range(imgxy[0], imgxy[2] + 1) for k in range(imgxy[1], imgxy[3] + 1))
 
